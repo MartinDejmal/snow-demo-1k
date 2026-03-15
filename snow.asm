@@ -4,8 +4,9 @@
 ;
 ; Memory layout:
 ;   $0801-$080D  BASIC stub (10 SYS 2062)
-;   $080E-$08FF  Machine code + tables
-;   $0900-$0AFF  Sprite data (8 x 64 bytes)
+;   $080E-$08BF  Machine code + tables + text print routine
+;   $08C0-$0ABF  Sprite data (8 x 64 bytes)
+;   $0AC0-$0Bxx  Static text data
 ;
 ; Build: acme snow.asm
 
@@ -17,6 +18,7 @@ XPOS    = $60           ; X positions for sprites 0-7 ($60-$67)
 YPOS    = $68           ; Y positions for sprites 0-7 ($68-$6F)
 SPEED   = $70           ; Fall speeds for sprites 0-7 ($70-$77)
 RND     = $78           ; LFSR pseudo-random byte
+TXTP    = $7A           ; Text pointer lo/hi for PRTXT ($7A-$7B)
 
 ; VIC-II registers
 VICBASE = $D000
@@ -45,6 +47,13 @@ START:
         lda #0
         sta $D020
         sta $D021
+
+        ; Print static text overlay
+        lda #<BIGTEXT
+        sta TXTP
+        lda #>BIGTEXT
+        sta TXTP+1
+        jsr PRTXT
 
         ; Initialise LFSR seed to non-zero
         lda #$A5
@@ -129,8 +138,8 @@ WRITE:
 ; ---------------------------------------------------------------
 
         ; Sprite data pointers: address / 64
-        ; $0900/64=36, $0940/64=37, ..., $0AC0/64=43
-PTRTAB: !byte 36, 37, 38, 39, 40, 41, 42, 43
+        ; $08C0/64=35, $0900/64=36, ..., $0A80/64=42
+PTRTAB: !byte 35, 36, 37, 38, 39, 40, 41, 42
 
         ; Initial X positions (spread across visible screen)
 IXTAB:  !byte  48, 100, 152, 200,  72, 124, 176,  24
@@ -142,10 +151,25 @@ IYTAB:  !byte  28,  60,  90, 120,  45,  75, 105, 135
 ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
 
 ; ---------------------------------------------------------------
+; PRTXT: print null-terminated PETSCII string via KERNAL CHROUT
+;        String address in TXTP/TXTP+1 (zero page)
+; ---------------------------------------------------------------
+PRTXT:
+        ldy #0
+PTLP:   lda (TXTP),y
+        beq PTDN
+        jsr $FFD2
+        iny
+        bne PTLP
+        inc TXTP+1
+        bne PTLP
+PTDN:   rts
+
+; ---------------------------------------------------------------
 ; Sprite data area — 8 snowflakes, 64 bytes each (63 used + 1 pad)
 ; All sprites placed on 64-byte boundaries within VIC bank 0
 ; ---------------------------------------------------------------
-        * = $0900
+        * = $08C0
 
 ; --- Sprite 0: Simple + cross (horizontal and vertical arms) ---
 ; |...........X............|
@@ -162,7 +186,7 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $00,$10,$00, $00,$10,$00, $00,$10,$00
         !byte $00                                   ; padding
 
-        * = $0940
+        * = $0900
 ; --- Sprite 1: × diagonal cross ---
 ; |.X...................X..|
 ; |..X.................X...|
@@ -177,7 +201,7 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $10,$00,$10, $20,$00,$08, $40,$00,$04
         !byte $00  ; padding
 
-        * = $0980
+        * = $0940
 ; --- Sprite 2: 6-arm star (arms at 0°,60°,120°,180°,240°,300°) ---
 ; |........................|
 ; |......X.........X.......|
@@ -193,7 +217,7 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $02,$00,$80, $00,$00,$00, $00,$00,$00
         !byte $00  ; padding
 
-        * = $09C0
+        * = $0980
 ; --- Sprite 3: 6-arm star with mid-arm branches ---
 ; Branches perpendicular to each arm at half-length
         !byte $00,$00,$00, $02,$00,$80, $02,$00,$80
@@ -207,7 +231,7 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $01,$00,$80, $02,$00,$80, $00,$00,$00
         !byte $00  ; padding
 
-        * = $0A00
+        * = $09C0
 ; --- Sprite 4: 6-arm star with forked tips ---
         !byte $01,$01,$00, $0a,$00,$a0, $06,$00,$c0
         !byte $01,$01,$00, $01,$02,$00, $00,$82,$00
@@ -220,7 +244,7 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $05,$00,$a0, $00,$81,$00, $00,$00,$00
         !byte $00  ; padding
 
-        * = $0A40
+        * = $0A00
 ; --- Sprite 5: Diamond (rotated square outline) ---
 ; |........................|
 ; |...........X............|
@@ -238,7 +262,7 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $00,$28,$00, $00,$10,$00, $00,$00,$00
         !byte $00  ; padding
 
-        * = $0A80
+        * = $0A40
 ; --- Sprite 6: 6-arm star with long perpendicular branches ---
         !byte $00,$00,$00, $02,$00,$80, $02,$30,$80
         !byte $01,$c9,$00, $03,$07,$00, $04,$82,$80
@@ -251,7 +275,7 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $01,$10,$80, $02,$00,$80, $00,$00,$00
         !byte $00  ; padding
 
-        * = $0AC0
+        * = $0A80
 ; --- Sprite 7: 8-arm star (octagonal, arms at 45° intervals) ---
 ; |........................|
 ; |...........X............|
@@ -267,3 +291,27 @@ ISTAB:  !byte   1,   2,   1,   2,   1,   2,   1,   2
         !byte $02,$10,$80, $04,$10,$40, $00,$10,$00
         !byte $00,$10,$00, $00,$10,$00, $00,$00,$00
         !byte $00  ; padding
+
+; ---------------------------------------------------------------
+; Static text data (null-terminated PETSCII, printed at startup)
+; $0E = lowercase mode, $13 = HOME, $11 = cursor down, $0D = RETURN
+; ---------------------------------------------------------------
+        * = $0AC0
+BIGTEXT:
+        !byte $0E, $13, $11, $11        ; lowercase mode, home, down×2 → row 2
+        !text "**FOREVER 2026**"
+        !byte $0D, $0D                  ; newline + blank line → row 4
+        !text "Create a tiny demo for Commodore 64."
+        !byte $0D                       ; → row 5
+        !text "Use assembly language for 6502."
+        !byte $0D                       ; → row 6
+        !text "Draw 8 different snowflakes as sprites."
+        !byte $0D                       ; → row 7
+        !text "Implement movement of the sprites from"
+        !byte $0D                       ; → row 8
+        !text "up to down on the screen."
+        !byte $0D, $0D                  ; → row 10
+        !text "Try to keep resulting code as short as"
+        !byte $0D                       ; → row 11
+        !text "possible to keep it under 1K."
+        !byte $00                       ; end of string
